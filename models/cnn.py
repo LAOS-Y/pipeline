@@ -5,10 +5,11 @@ import time
 
 class CNN(object):
 	def __init__(self, lr=0.0005, l2_reg=None, W_init=tf.truncated_normal_initializer(stddev=0.2),
-				batch_size=16, 
+				batch_size=16, n_epoch=100,
 				inputs=tf.placeholder(tf.float32, shape=[None, 224, 224, 3]),
 				labels=tf.placeholder(tf.float32, shape=[None, 100]),
-				n_epoch=100, reuse=False):
+				residual_number=9,
+				name='CNN', reuse=False):
 		self.W_init = W_init
 		self.reuse = reuse
 		self.learning_rate = lr
@@ -17,27 +18,75 @@ class CNN(object):
 		self.n_epoch = n_epoch
 		self.inputs = inputs
 		self.labels = labels
+		self.residual_number = residual_number
+		self.name = name
 		self.network = self.model(self.inputs)
 
+	def _residual_block(self, last_layer, count, nb_filters=16, subsample_factor=1, name_prefix='res/'):
+		last_channels = last_layer.outputs.get_shape().as_list()[3]
+		if subsample_factor > 1:
+			subsample = [1, subsample_factor, subsample_factor, 1]
+			short_cut = PoolLayer(last_layer, ksize=subsample, strides=subsample, padding='VALID',
+								pool=tf.nn.avg_pool, name=name_prefix+'pool_layer'+str(count))
+		else:
+			subsample = [1, 1, 1, 1]
+			short_cut = last_layer
+
+		def zero_pad_channels(x, pad=0):
+			pattern = [[0, 0], [0, 0], [0, 0], [pad - pad // 2, pad // 2]]
+			return tf.pad(x, pattern)
+
+		if nb_filters > last_channels:
+			short_cut = LambdaLayer(short_cut, zero_pad_channels,
+									fn_args={'pad': nb_filters - last_channels},
+									name=name_prefix+'lambda_layer'+str(count))
+
+		y = BatchNormLayer(last_layer, decay=0.999, epsilon=1e-05, 
+							is_train=True, name=name_prefix+'norm_layer1'+str(count))
+		y = Conv2dLayer(y, act=tf.nn.relu, W_init=self.W_init,
+						shape=[3, 3, last_channels, nb_filters], strides=subsample,
+						padding='SAME', name=name_prefix+'conv_layer1'+str(count))
+		y = BatchNormLayer(last_layer, decay=0.999, epsilon=1e-05, 
+							is_train=True, name=name_prefix+'norm_layer2'+str(count))
+		last_channels = y.outputs.get_shape().as_list()[3]
+		final_channels = short_cut.outputs.get_shape().as_list()[3]
+		y = Conv2dLayer(y, act=tf.nn.relu, W_init=self.W_init,
+						shape=[3, 3, last_channels, final_channels], strides=subsample,
+						padding='SAME', name=name_prefix+'conv_layer2'+str(count))
+
+		out = ElementwiseLayer([y, short_cut], combine_fn=tf.add, 
+								name=name_prefix+'merge_layer'+str(count))
+		return out
+
 	def model(self, inputs):
-		with tf.variable_scope('mlp', reuse=self.reuse):
+		with tf.variable_scope(self.name, reuse=self.reuse):
 			tl.layers.set_name_reuse(self.reuse)
-			network = InputLayer(inputs, name='net/in')
-			network = Conv2dLayer(network, act=tf.nn.relu, W_init=self.W_init,
-								shape=[5, 5, 3, 128], strides=[1, 2, 2, 1], padding='VALID',
-								name='net/cnn_layer1')
-			network = Conv2dLayer(network, act=tf.nn.relu, W_init=self.W_init,
-								shape=[3, 3, 128, 64], strides=[1, 2, 2, 1], padding='VALID',
-								name='net/cnn_layer2')
-			network = Conv2dLayer(network, act=tf.nn.relu, W_init=self.W_init,
+			net = InputLayer(inputs, name='net/in')
+			net = Conv2dLayer(net, act=tf.nn.relu, W_init=self.W_init,
+								shape=[5, 5, 3, 128], strides=[1, 2, 2, 1], padding='SAME',
+								name='net/conv_layer1')
+			net = Conv2dLayer(net, act=tf.nn.relu, W_init=self.W_init,
+								shape=[3, 3, 128, 64], strides=[1, 2, 2, 1], padding='SAME',
+								name='net/conv_layer2')
+			net = Conv2dLayer(net, act=tf.nn.relu, W_init=self.W_init,
 								shape=[3, 3, 64, 32], strides=[1, 2, 2, 1], padding='VALID',
 								name='net/cnn_layer3')
-			network = FlattenLayer(network, name='net/flatten')
-			network = DenseLayer(network, n_units=1024, act=lambda x: tl.act.lrelu(x, 0.2),
+
+			for count in range(self.residual_number):
+				self._residual_block(net, count)
+
+			last_channels = net.outputs.get_shape().as_list()[3]
+
+			net = Conv2dLayer(net, act=tf.nn.relu, W_init=self.W_init,
+								shape=[3, 3, last_channels, 32], strides=[1, 2, 2, 1], padding='VALID',
+								name='net/cnn_layer4')
+
+			net = FlattenLayer(net, name='net/flatten')
+			net = DenseLayer(net, n_units=1024, act=lambda x: tl.act.lrelu(x, 0.2),
 								W_init=self.W_init, name='net/Dense3')
-			network = DenseLayer(network, n_units=100, act=tf.identity,
+			net = DenseLayer(net, n_units=100, act=tf.identity,
 								W_init=self.W_init, name='net/output')
-		return network
+		return net
 
 	def loss(self, label, logits):
 		with tf.name_scope('loss'):
@@ -67,8 +116,8 @@ class CNN(object):
 			print("Epoch %d of %d, loss %f" % (epoch + 1, self.n_epoch, total_loss / n_batch))
 			print("Epoch %d takes %d seconds" % (epoch + 1, time.time() - epoch_time))
 			
-			#if (epoch + 1) % 50 == 0:
-			#	tl.files.save_npz(self.network.all_params , name='model_cnn' + str(epoch + 1) + '.npz')
+			if (epoch + 1) % 50 == 0:
+				tl.files.save_npz(self.network.all_params , name='model_cnn' + str(epoch + 1) + '.npz')
 		
 		end_time = time.time()
 		print('Training takes %d seconds' % (end_time - start_time))
