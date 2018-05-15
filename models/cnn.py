@@ -29,6 +29,9 @@ class CNN(object):
 			network = Conv2dLayer(network, act=tf.nn.relu, W_init=self.W_init,
 								shape=[3, 3, 128, 64], strides=[1, 2, 2, 1], padding='VALID',
 								name='net/cnn_layer2')
+			network = Conv2dLayer(network, act=tf.nn.relu, W_init=self.W_init,
+								shape=[3, 3, 64, 32], strides=[1, 2, 2, 1], padding='VALID',
+								name='net/cnn_layer3')
 			network = FlattenLayer(network, name='net/flatten')
 			network = DenseLayer(network, n_units=1024, act=lambda x: tl.act.lrelu(x, 0.2),
 								W_init=self.W_init, name='net/Dense3')
