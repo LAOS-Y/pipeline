@@ -9,7 +9,7 @@ class CNN(object):
 				inputs=tf.placeholder(tf.float32, shape=[None, 224, 224, 3]),
 				labels=tf.placeholder(tf.float32, shape=[None, 100]),
 				sess=tf.InteractiveSession(),
-				residual_number=9,
+				residual_block_per_group=4, widening_factor=4,
 				name='CNN', reuse=False):
 		self.W_init = W_init
 		self.reuse = reuse
@@ -19,9 +19,12 @@ class CNN(object):
 		self.n_epoch = n_epoch
 		self.inputs = inputs
 		self.labels = labels
-		self.residual_number = residual_number
 		self.name = name
 		self.sess = sess
+		# wide res-net
+		self.blocks_per_group = residual_block_per_group
+		self.widening_factor = widening_factor
+
 		self.network = self.model(self.inputs)
 		self.pred_ = tf.nn.softmax(self.network.outputs)
 
@@ -75,8 +78,28 @@ class CNN(object):
 								shape=[3, 3, 64, 32], strides=[1, 2, 2, 1], padding='VALID',
 								name='net/cnn_layer3')
 
-			for count in range(self.residual_number):
-				self._residual_block(net, count)
+			for i in range(self.residual_block_per_group):
+				nb_filters = 16 * self.widening_factor
+				count = i
+				net = self._residual_block(net, count, nb_filters=nb_filters, subsample_factor=1)
+
+			for i in range(self.blocks_per_group):
+				nb_filters = 32 * self.widening_factor
+				if i == 0:
+					subsample_factor = 2
+				else:
+					subsample_factor = 1
+				count = i + self.blocks_per_group
+				net = self._residual_block(net, count, nb_filters=nb_filters, subsample_factor=subsample_factor)
+
+			for i in range(self.blocks_per_group):
+				nb_filters = 64 * self.widening_factor
+				if i == 0:
+					subsample_factor = 2
+				else:
+					subsample_factor = 1
+				count = i + 2 * self.blocks_per_group
+				net = self._residual_block(net, count, nb_filters=nb_filters, subsample_factor=subsample_factor)
 
 			last_channels = net.outputs.get_shape().as_list()[3]
 
@@ -94,9 +117,6 @@ class CNN(object):
 	def loss(self, label, logits):
 		with tf.name_scope('loss'):
 			loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=label))
-			if self.l2_reg is not None:
-				l2_loss = tf.contrib.layers.l2_regularizer(self.l2_reg)(network.all_params[5]) + tf.contrib.layers.l2_regularizer(self.l2_reg)(network.all_params[7])
-				loss = loss + l2_loss
 		return loss
 
 	def fit(self, X_train, y_train):
