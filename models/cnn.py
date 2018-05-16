@@ -32,7 +32,7 @@ class CNN(object):
 		last_channels = last_layer.outputs.get_shape().as_list()[3]
 		if subsample_factor > 1:
 			subsample = [1, subsample_factor, subsample_factor, 1]
-			short_cut = PoolLayer(last_layer, ksize=subsample, strides=subsample, padding='VALID',
+			short_cut = PoolLayer(last_layer, ksize=subsample, strides=subsample, padding='SAME',
 								pool=tf.nn.avg_pool, name=name_prefix+'pool_layer'+str(count))
 		else:
 			subsample = [1, 1, 1, 1]
@@ -75,10 +75,10 @@ class CNN(object):
 								shape=[3, 3, 128, 64], strides=[1, 2, 2, 1], padding='SAME',
 								name='net/conv_layer2')
 			net = Conv2dLayer(net, act=tf.nn.relu, W_init=self.W_init,
-								shape=[3, 3, 64, 32], strides=[1, 2, 2, 1], padding='VALID',
+								shape=[3, 3, 64, 32], strides=[1, 2, 2, 1], padding='SAME',
 								name='net/cnn_layer3')
 
-			for i in range(self.residual_block_per_group):
+			for i in range(self.blocks_per_group):
 				nb_filters = 16 * self.widening_factor
 				count = i
 				net = self._residual_block(net, count, nb_filters=nb_filters, subsample_factor=1)
@@ -108,8 +108,8 @@ class CNN(object):
 								name='net/cnn_layer4')
 
 			net = FlattenLayer(net, name='net/flatten')
-			net = DenseLayer(net, n_units=1024, act=lambda x: tl.act.lrelu(x, 0.2),
-								W_init=self.W_init, name='net/Dense3')
+			#net = DenseLayer(net, n_units=1024, act=lambda x: tl.act.lrelu(x, 0.2),
+			#					W_init=self.W_init, name='net/Dense3')
 			net = DenseLayer(net, n_units=100, act=tf.identity,
 								W_init=self.W_init, name='net/output')
 		return net
