@@ -8,6 +8,7 @@ class CNN(object):
 				batch_size=16, n_epoch=100,
 				inputs=tf.placeholder(tf.float32, shape=[None, 224, 224, 3]),
 				labels=tf.placeholder(tf.float32, shape=[None, 100]),
+				sess=tf.InteractiveSession(),
 				residual_number=9,
 				name='CNN', reuse=False):
 		self.W_init = W_init
@@ -20,6 +21,7 @@ class CNN(object):
 		self.labels = labels
 		self.residual_number = residual_number
 		self.name = name
+		self.sess = sess
 		self.network = self.model(self.inputs)
 
 	def _residual_block(self, last_layer, count, nb_filters=16, subsample_factor=1, name_prefix='res/'):
@@ -101,17 +103,16 @@ class CNN(object):
 		loss_ = self.loss(self.labels, logits)
 		train_param = self.network.all_params
 		train_op = tf.train.RMSPropOptimizer(learning_rate=self.learning_rate).minimize(loss_, var_list=train_param)
-		sess = tf.InteractiveSession()
-
+		
 		start_time = time.time()
 		print('Start Training CNN at ', time.asctime(time.localtime(start_time)))
-		sess.run(tf.global_variables_initializer())
+		self.sess.run(tf.global_variables_initializer())
 		
 		for epoch in range(self.n_epoch):
 			epoch_time = time.time()
 			total_loss, n_batch = 0, 0
 			for X_batch, y_batch in tl.iterate.minibatches(X_train, y_train, self.batch_size, shuffle=True):
-				batch_loss, _ = sess.run([loss_, train_op], feed_dict={self.inputs: X_batch, self.labels: y_batch})
+				batch_loss, _ = self.sess.run([loss_, train_op], feed_dict={self.inputs: X_batch, self.labels: y_batch})
 				total_loss += batch_loss; n_batch += 1
 			print("Epoch %d of %d, loss %f" % (epoch + 1, self.n_epoch, total_loss / n_batch))
 			print("Epoch %d takes %d seconds" % (epoch + 1, time.time() - epoch_time))
