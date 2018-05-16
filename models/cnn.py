@@ -23,6 +23,7 @@ class CNN(object):
 		self.name = name
 		self.sess = sess
 		self.network = self.model(self.inputs)
+		self.pred_ = tf.nn.softmax(self.network.outputs)
 
 	def _residual_block(self, last_layer, count, nb_filters=16, subsample_factor=1, name_prefix='res/'):
 		last_channels = last_layer.outputs.get_shape().as_list()[3]
@@ -125,4 +126,5 @@ class CNN(object):
 
 
 	def predict(self, X):
-		pass
+		pred_y = self.sess.run(self.pred_, feed_dict={self.inputs: X})
+		return pred_y
