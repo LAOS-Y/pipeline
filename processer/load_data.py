@@ -11,6 +11,7 @@ def load_and_resize(file_labels, file_path, resize_list=[(400, 400), (299, 299),
 			img_name = temp[0]
 			img_class = int(temp[1]) - 1
 			img_list.append([img_name, img_class])
+	np.random.seed(42)
 	indice_mask = np.random.permutation(len(img_list))
 	new_img_list = [[]]
 	for _ in resize_list:
